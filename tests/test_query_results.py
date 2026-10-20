@@ -23,6 +23,8 @@ from sqlsaber.query_result_resolution import (
 )
 from sqlsaber.query_results import (
     MAX_MODEL_QUERY_RESULT_BYTES,
+    MAX_QUERY_RESULT_SQL_BYTES,
+    StoredQueryResult,
     FilesystemQueryResultStore,
     InMemoryQueryResultStore,
     QueryResultContext,
@@ -247,3 +249,65 @@ async def test_execute_sql_stores_complete_rows_but_returns_bounded_projection()
     loaded = await store.get(descriptor["id"], context=QueryResultContext())
     assert len(loaded.rows()) == 1000
     assert loaded.descriptor.sha256 == hashlib.sha256(loaded.data).hexdigest()
+    executed = "SELECT value FROM numbers LIMIT 1000"
+    assert descriptor["sql"].upper() == executed.upper()
+    assert loaded.descriptor.sql == descriptor["sql"]
+    assert (
+        descriptor["sql_sha256"]
+        == hashlib.sha256(descriptor["sql"].encode()).hexdigest()
+    )
+
+
+def test_descriptor_records_sql_text_and_digest() -> None:
+    data = b"{}"
+    descriptor = descriptor_for_data(
+        data,
+        result_id=new_query_result_id(),
+        file="result_call.json",
+        row_count=0,
+        columns=(),
+        sql="SELECT 1",
+    )
+
+    assert descriptor.sql == "SELECT 1"
+    assert descriptor.sql_sha256 == hashlib.sha256(b"SELECT 1").hexdigest()
+    assert StoredQueryResult.from_dict(descriptor.to_dict()) == descriptor
+
+
+def test_oversized_sql_keeps_only_digest() -> None:
+    sql = "SELECT " + "x" * MAX_QUERY_RESULT_SQL_BYTES
+    descriptor = descriptor_for_data(
+        b"{}",
+        result_id=new_query_result_id(),
+        file="result_call.json",
+        row_count=0,
+        columns=(),
+        sql=sql,
+    )
+
+    assert descriptor.sql is None
+    assert descriptor.sql_sha256 == hashlib.sha256(sql.encode()).hexdigest()
+    assert StoredQueryResult.from_dict(descriptor.to_dict()) == descriptor
+
+
+def test_descriptor_without_sql_stays_backward_compatible() -> None:
+    descriptor = _descriptor(b"{}")
+    raw = descriptor.to_dict()
+
+    assert "sql" not in raw and "sql_sha256" not in raw
+    assert StoredQueryResult.from_dict(raw) == descriptor
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"sql": 5},
+        {"sql_sha256": "not-a-digest"},
+        {"sql": "SELECT 1", "sql_sha256": hashlib.sha256(b"SELECT 2").hexdigest()},
+        {"sql": "x" * (MAX_QUERY_RESULT_SQL_BYTES + 1)},
+    ],
+)
+def test_invalid_sql_provenance_is_rejected(overrides) -> None:
+    raw = {**_descriptor(b"{}").to_dict(), **overrides}
+
+    assert StoredQueryResult.from_dict(raw) is None

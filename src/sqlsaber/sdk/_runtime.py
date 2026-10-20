@@ -90,6 +90,7 @@ class _SQLSaberRuntime:
             thinking_level=resolved_thinking_level,
             model_name=options.model_name,
             api_key=options.api_key,
+            model=options.model,
             allow_dangerous=options.allow_dangerous,
             csv_tool_results=options.csv_tool_results,
             max_rows=options.max_rows,

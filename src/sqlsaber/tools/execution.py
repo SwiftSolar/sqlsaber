@@ -53,6 +53,7 @@ class ExecutionResult:
     query_type: str
     auto_limit_applied: bool
     truncated: bool = False
+    executed_query: str | None = None
 
 
 async def execute_guarded(
@@ -113,5 +114,9 @@ async def execute_guarded(
     rows = await connection.execute_query(query, **options)
     truncated = bounded and len(rows) > max_rows
     return ExecutionResult(
-        rows[:max_rows] if truncated else rows, query_type, auto_limit, truncated
+        rows[:max_rows] if truncated else rows,
+        query_type,
+        auto_limit,
+        truncated,
+        executed_query=query,
     )

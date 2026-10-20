@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 from sqlsaber.config.settings import ThinkingLevel
 
 if TYPE_CHECKING:
+    from pydantic_ai.models import Model
+
     from sqlsaber.artifacts import ArtifactFailureMode, ArtifactStore
     from sqlsaber.capabilities.plugins import CapabilitySpec
     from sqlsaber.config.settings import Config
@@ -29,6 +31,8 @@ class SQLSaberOptions:
     # Model
     model_name: str | None = None
     api_key: str | None = None
+    model: Model | None = None
+    """Host-constructed pydantic-ai model; excludes ``model_name``/``api_key``."""
     thinking_enabled: bool | None = None
     thinking_level: ThinkingLevel | str | None = None
 

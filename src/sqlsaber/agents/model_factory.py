@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 
 from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.openai import OpenAIResponsesModel
+from pydantic_ai.providers import Provider
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -106,7 +107,49 @@ def build_model(
         from pydantic_ai.providers.xai import XaiProvider
 
         return XaiModel(model_name, provider=XaiProvider(api_key=api_key))
+    if provider is not None:
+        # Other providers: construct through pydantic-ai inference with the
+        # explicit key, so credentials never travel via os.environ.
+        from pydantic_ai.models import infer_model
+        from pydantic_ai.providers import infer_provider_class
+
+        def provider_factory(name: str) -> Provider[Any]:
+            # Every API-key provider in sqlsaber's registry accepts `api_key`.
+            provider_cls = cast(Any, infer_provider_class(name))
+            return provider_cls(api_key=api_key)
+
+        try:
+            return infer_model(normalized_model_str, provider_factory=provider_factory)
+        except ValueError:
+            pass
     return normalized_model_str
+
+
+def provider_for_model(full_model_str: str) -> str:
+    """Return the canonical provider key, or the raw prefix when unknown."""
+    provider = providers.provider_from_model(full_model_str)
+    if provider is None:
+        provider = full_model_str.partition(":")[0].strip().lower()
+    return provider
+
+
+def resolve_injected_model(model: Model) -> ResolvedModel:
+    """Describe a host-constructed model without touching credentials.
+
+    Args:
+        model: A pydantic-ai model built (with its provider) by the host.
+
+    Returns:
+        A ResolvedModel named ``<provider>:<model_name>``; ``api_key`` is ``None``
+        because credentials stay inside the model's provider.
+    """
+    provider = providers.canonical(model.system) or model.system
+    return ResolvedModel(
+        model_name=f"{provider}:{model.model_name}",
+        model=model,
+        provider=provider,
+        api_key=None,
+    )
 
 
 def resolve_model(
@@ -118,9 +161,7 @@ def resolve_model(
 ) -> ResolvedModel:
     """Resolve authentication and construct one Pydantic AI model."""
 
-    provider = providers.provider_from_model(full_model_str)
-    if provider is None:
-        provider = full_model_str.partition(":")[0].strip().lower()
+    provider = provider_for_model(full_model_str)
 
     if provider == "openai-codex":
         if api_key_override:

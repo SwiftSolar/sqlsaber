@@ -6,10 +6,15 @@ from typing import Any, Callable
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.capabilities import AbstractCapability, ProcessHistory, Thinking
 from pydantic_ai.messages import AgentStreamEvent, ModelMessage
+from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModelSettings
 from pydantic_ai.usage import UsageLimits
 
-from sqlsaber.agents.model_factory import UNIFIED_EFFORT_MAP, resolve_model
+from sqlsaber.agents.model_factory import (
+    UNIFIED_EFFORT_MAP,
+    resolve_injected_model,
+    resolve_model,
+)
 from sqlsaber.artifacts import ArtifactFailureMode, ArtifactStore
 from sqlsaber.capabilities import Knowledge, SqlTools
 from sqlsaber.capabilities.base import SqlSaberCapability
@@ -59,6 +64,7 @@ class SQLSaberAgent:
         thinking_level: ThinkingLevel | None = None,
         model_name: str | None = None,
         api_key: str | None = None,
+        model: Model | None = None,
         allow_dangerous: bool = False,
         csv_tool_results: bool = False,
         max_rows: int | None = None,
@@ -91,6 +97,7 @@ class SQLSaberAgent:
         )
         self._model_name_override = model_name
         self._api_key_override = api_key
+        self._model_override = model
         self.db_type = self.db_connection.display_name
         self.allow_dangerous = allow_dangerous
         self.csv_tool_results = csv_tool_results
@@ -138,12 +145,21 @@ class SQLSaberAgent:
                 "Model name is required when providing an api_key override."
             )
 
-        model_name = self._model_name_override or self.config.model.name
-        resolved = resolve_model(
-            self.config.auth,
-            model_name,
-            api_key_override=self._api_key_override,
-        )
+        if self._model_override is not None:
+            if self._model_name_override or self._api_key_override:
+                raise ValueError(
+                    "Pass either a constructed `model` or `model_name`/`api_key`, "
+                    "not both."
+                )
+            resolved = resolve_injected_model(self._model_override)
+            model_name = resolved.model_name
+        else:
+            model_name = self._model_name_override or self.config.model.name
+            resolved = resolve_model(
+                self.config.auth,
+                model_name,
+                api_key_override=self._api_key_override,
+            )
 
         include_guidance = self.system_prompt_override is None
         context = PluginContext(
@@ -157,6 +173,7 @@ class SQLSaberAgent:
             artifact_store=self._artifact_store,
             artifact_failure_mode=self._artifact_failure_mode,
             workspace_input_resolver=self._workspace_input_resolver,
+            main_model=self._model_override,
         )
         plugin_capabilities = self._plugin_capabilities
         if plugin_capabilities is None:
@@ -243,6 +260,7 @@ class SQLSaberAgent:
         previous = (
             self._model_name_override,
             self._api_key_override,
+            self._model_override,
             self.thinking_enabled,
             self.thinking_level,
             self.capabilities,
@@ -251,6 +269,7 @@ class SQLSaberAgent:
         try:
             self._model_name_override = None
             self._api_key_override = None
+            self._model_override = None
             self.thinking_enabled = self.config.model.thinking_enabled
             self.thinking_level = self.config.model.thinking_level
             agent = self._build_agent()
@@ -258,6 +277,7 @@ class SQLSaberAgent:
             (
                 self._model_name_override,
                 self._api_key_override,
+                self._model_override,
                 self.thinking_enabled,
                 self.thinking_level,
                 self.capabilities,

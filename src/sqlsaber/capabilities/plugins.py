@@ -38,6 +38,8 @@ class PluginContext:
     artifact_store: ArtifactStore | None = None
     artifact_failure_mode: ArtifactFailureMode = "required"
     workspace_input_resolver: WorkspaceInputResolver | None = None
+    main_model: Model | None = None
+    """Host-constructed session model, inherited by subagents without an override."""
 
     def resolve_subagent_model(
         self,
@@ -48,6 +50,14 @@ class PluginContext:
         """Resolve a capability's explicit model or inherit the session model."""
 
         use_main_key = model_name is None
+        if use_main_key and api_key is None and self.main_model is not None:
+            from sqlsaber.agents.model_factory import provider_for_model
+
+            return (
+                self.main_model_name,
+                self.main_model,
+                provider_for_model(self.main_model_name),
+            )
         model_name = model_name or self.main_model_name
         api_key = api_key or (self.main_api_key if use_main_key else None)
         # Import lazily to avoid loading the managed-agent package while plugin

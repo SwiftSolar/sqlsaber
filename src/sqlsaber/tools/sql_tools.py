@@ -510,6 +510,7 @@ class ExecuteSQLTool(SQLTool):
                 row_count=row_count,
                 columns=query_result_columns(cast(list[object], results)),
                 database_name=target.database_name,
+                sql=execution.executed_query,
             )
             try:
                 descriptor = await self.query_result_store.put(
