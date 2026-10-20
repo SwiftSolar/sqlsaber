@@ -48,3 +48,7 @@ class SQLSaberOptions:
     # SQL tool behavior
     allow_dangerous: bool = False
     csv_tool_results: bool = False
+    max_rows: int | None = None
+    """Automatic ``LIMIT`` for unbounded read queries (``None`` = 1000)."""
+    query_timeout: float | None = None
+    """Per-query timeout in seconds (``None`` = connection default, 30s)."""

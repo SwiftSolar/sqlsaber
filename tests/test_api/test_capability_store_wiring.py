@@ -128,3 +128,22 @@ async def test_host_agent_sqltools_and_viz_share_store_and_all_rows(tmp_path) ->
         assert viz.tool.query_result_store is sql.query_result_store
     finally:
         await sql.close()
+
+
+@pytest.mark.asyncio
+async def test_sdk_options_configure_sql_limits() -> None:
+    saber = SQLSaber(
+        options=SQLSaberOptions(
+            database="sqlite:///:memory:",
+            settings=_settings(),
+            max_rows=200,
+            query_timeout=300,
+        )
+    )
+    try:
+        sql = next(c for c in saber.agent.capabilities if isinstance(c, SqlTools))
+        execute_tool = sql._tools["execute_sql"]
+        assert execute_tool.max_rows == 200
+        assert execute_tool.query_timeout == 300.0
+    finally:
+        await saber.close()

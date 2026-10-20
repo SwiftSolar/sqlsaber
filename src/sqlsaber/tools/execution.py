@@ -15,6 +15,38 @@ class InvalidQuery(ValueError):
     """A query rejected before reaching the database."""
 
 
+def validate_max_rows(max_rows: int) -> int:
+    """Return a valid automatic row limit or raise ``ValueError``.
+
+    Args:
+        max_rows: Maximum rows added as ``LIMIT`` to unbounded read queries.
+
+    Returns:
+        The validated row limit.
+    """
+    if isinstance(max_rows, bool) or not isinstance(max_rows, int) or max_rows < 1:
+        raise ValueError("max_rows must be a positive integer")
+    return max_rows
+
+
+def validate_query_timeout(timeout: float | None) -> float | None:
+    """Return a valid query timeout in seconds, or ``None`` for the default.
+
+    Args:
+        timeout: Query timeout in seconds; ``None`` keeps the connection default.
+
+    Returns:
+        The validated timeout as a float, or ``None``.
+    """
+    if timeout is None:
+        return None
+    if isinstance(timeout, bool) or not isinstance(timeout, int | float):
+        raise ValueError("query_timeout must be a positive number of seconds")
+    if not timeout > 0 or timeout == float("inf"):
+        raise ValueError("query_timeout must be a positive number of seconds")
+    return float(timeout)
+
+
 @dataclass
 class ExecutionResult:
     rows: list[dict[str, Any]]
@@ -30,6 +62,7 @@ async def execute_guarded(
     allow_dangerous: bool = False,
     max_rows: int = 1000,
     bounded: bool = False,
+    timeout: float | None = None,
 ) -> ExecutionResult:
     """Validate and execute SQL, optionally bounding the complete read result.
 
@@ -70,11 +103,14 @@ async def execute_guarded(
     elif auto_limit:
         query = add_limit(query, dialect, max_rows)
     query_type = validation.query_type or "other"
-    rows = await connection.execute_query(
-        query,
-        commit=bool(allow_dangerous and query_type in {"dml", "ddl"}),
-        read_only=not allow_dangerous,
-    )
+    options: dict[str, Any] = {
+        "commit": bool(allow_dangerous and query_type in {"dml", "ddl"}),
+        "read_only": not allow_dangerous,
+    }
+    if timeout is not None:
+        # Only override when configured so connections keep their own default.
+        options["timeout"] = timeout
+    rows = await connection.execute_query(query, **options)
     truncated = bounded and len(rows) > max_rows
     return ExecutionResult(
         rows[:max_rows] if truncated else rows, query_type, auto_limit, truncated

@@ -34,7 +34,7 @@ from .display import (
     TableConfig,
     ToolDisplaySpec,
 )
-from .execution import execute_guarded
+from .execution import execute_guarded, validate_max_rows, validate_query_timeout
 
 
 def _as_cell(value: object) -> Cell:
@@ -335,10 +335,16 @@ class ExecuteSQLTool(SQLTool):
         *,
         query_result_store: QueryResultStore | None = None,
         csv_tool_results: bool = False,
+        max_rows: int | None = None,
+        query_timeout: float | None = None,
     ) -> None:
         super().__init__(db_connection, schema_manager)
         self.query_result_store = query_result_store
         self.csv_tool_results = csv_tool_results
+        self.max_rows = validate_max_rows(
+            self.MAX_ROWS if max_rows is None else max_rows
+        )
+        self.query_timeout = validate_query_timeout(query_timeout)
 
     display_spec = ToolDisplaySpec(
         metadata=DisplayMetadata(display_name="Execute SQL"),
@@ -433,14 +439,13 @@ class ExecuteSQLTool(SQLTool):
         if not query:
             return json_dumps({"error": "No query provided"})
 
-        max_rows = self.MAX_ROWS
-
         try:
             execution = await execute_guarded(
                 target.connection,
                 query,
                 allow_dangerous=self.allow_dangerous,
-                max_rows=max_rows,
+                max_rows=self.max_rows,
+                timeout=self.query_timeout,
             )
             results = execution.rows
             query_type = execution.query_type

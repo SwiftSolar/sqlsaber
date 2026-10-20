@@ -198,3 +198,21 @@ async def test_borrowed_registry_is_not_closed(
         await agent.run("Hello")
 
     assert close_calls == 0
+
+
+def test_sql_tools_pass_limits_to_execute_tool() -> None:
+    capability = SqlTools(registry=_registry(), max_rows=50, query_timeout=90)
+
+    execute_tool = capability._tools["execute_sql"]
+
+    assert execute_tool.max_rows == 50
+    assert execute_tool.query_timeout == 90.0
+
+
+def test_sql_tools_default_limits_preserve_historical_behavior() -> None:
+    capability = SqlTools(registry=_registry())
+
+    execute_tool = capability._tools["execute_sql"]
+
+    assert execute_tool.max_rows == 1000
+    assert execute_tool.query_timeout is None

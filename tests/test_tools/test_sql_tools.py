@@ -25,6 +25,7 @@ class MockDatabaseConnection(SQLiteConnection):
         self.queries = []
         self.commits = []
         self.read_only_flags = []
+        self.timeouts = []
         self.mock_results = []
 
     def to_connection_string(self) -> str:
@@ -44,6 +45,7 @@ class MockDatabaseConnection(SQLiteConnection):
         self.queries.append(query)
         self.commits.append(commit)
         self.read_only_flags.append(read_only)
+        self.timeouts.append(timeout)
         return self.mock_results
 
     async def get_pool(self):
@@ -212,6 +214,57 @@ class TestExecuteSQLTool:
         assert data["row_count"] == 2
         assert len(data["results"]) == 2
         assert db.queries[-1] == "SELECT * FROM users LIMIT 1000"
+
+    @pytest.mark.asyncio
+    async def test_configured_max_rows_sets_automatic_limit(self):
+        tool = ExecuteSQLTool(max_rows=25)
+        db = MockDatabaseConnection()
+        db.mock_results = [{"id": 1}]
+        tool.db = db
+
+        await tool.execute(SimpleNamespace(tool_call_id=None), "SELECT * FROM users")
+
+        assert db.queries[-1] == "SELECT * FROM users LIMIT 25"
+
+    @pytest.mark.asyncio
+    async def test_default_timeout_defers_to_connection(self):
+        tool = ExecuteSQLTool()
+        db = MockDatabaseConnection()
+        db.mock_results = [{"id": 1}]
+        tool.db = db
+
+        await tool.execute(SimpleNamespace(tool_call_id=None), "SELECT 1")
+
+        assert db.timeouts[-1] is None
+
+    @pytest.mark.asyncio
+    async def test_configured_query_timeout_reaches_connection(self):
+        tool = ExecuteSQLTool(query_timeout=120)
+        db = MockDatabaseConnection()
+        db.mock_results = [{"id": 1}]
+        tool.db = db
+
+        await tool.execute(SimpleNamespace(tool_call_id=None), "SELECT 1")
+
+        assert db.timeouts[-1] == 120.0
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"max_rows": 0},
+            {"max_rows": -5},
+            {"max_rows": True},
+            {"max_rows": 2.5},
+            {"query_timeout": 0},
+            {"query_timeout": -1},
+            {"query_timeout": float("inf")},
+            {"query_timeout": float("nan")},
+            {"query_timeout": True},
+        ],
+    )
+    def test_invalid_limits_are_rejected(self, kwargs):
+        with pytest.raises(ValueError):
+            ExecuteSQLTool(**kwargs)
 
     @pytest.mark.asyncio
     async def test_execute_with_limit(self):

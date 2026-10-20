@@ -92,6 +92,8 @@ class _SQLSaberRuntime:
             api_key=options.api_key,
             allow_dangerous=options.allow_dangerous,
             csv_tool_results=options.csv_tool_results,
+            max_rows=options.max_rows,
+            query_timeout=options.query_timeout,
             system_prompt=system_prompt_text,
             capabilities=options.capabilities,
             artifact_store=options.artifact_store,

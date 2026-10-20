@@ -95,7 +95,21 @@ class SqlTools(SqlSaberCapability):
         csv_tool_results: bool = False,
         include_catalog_instructions: bool = True,
         query_result_store: QueryResultStore | None = None,
+        max_rows: int | None = None,
+        query_timeout: float | None = None,
     ) -> None:
+        """Create SQL tools.
+
+        Args:
+            database: Database selector(s) to resolve when ``registry`` is omitted.
+            registry: Pre-resolved database registry (not owned by the capability).
+            allow_dangerous: Allow write statements (disables read-only guards).
+            csv_tool_results: Project query results to the model as CSV.
+            include_catalog_instructions: Add SQL guidance and catalog instructions.
+            query_result_store: Store retaining complete query results.
+            max_rows: Automatic ``LIMIT`` for unbounded reads (default 1000).
+            query_timeout: Per-query timeout in seconds (default: connection's).
+        """
         if registry is not None and database is not None:
             raise ValueError("Pass either `database` or `registry`, not both.")
 
@@ -128,6 +142,8 @@ class SqlTools(SqlSaberCapability):
             ExecuteSQLTool(
                 query_result_store=self.query_result_store,
                 csv_tool_results=csv_tool_results,
+                max_rows=max_rows,
+                query_timeout=query_timeout,
             ),
         ]
         if len(registry) > 1:

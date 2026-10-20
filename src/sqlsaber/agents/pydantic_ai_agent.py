@@ -61,6 +61,8 @@ class SQLSaberAgent:
         api_key: str | None = None,
         allow_dangerous: bool = False,
         csv_tool_results: bool = False,
+        max_rows: int | None = None,
+        query_timeout: float | None = None,
         system_prompt: str | None = None,
         capabilities: Sequence[CapabilitySpec] = (),
         artifact_store: ArtifactStore | None = None,
@@ -92,6 +94,8 @@ class SQLSaberAgent:
         self.db_type = self.db_connection.display_name
         self.allow_dangerous = allow_dangerous
         self.csv_tool_results = csv_tool_results
+        self.max_rows = max_rows
+        self.query_timeout = query_timeout
         self._capability_specs = tuple(capabilities)
         self._artifact_store = artifact_store
         self._artifact_failure_mode = artifact_failure_mode
@@ -172,6 +176,8 @@ class SQLSaberAgent:
                 csv_tool_results=self.csv_tool_results,
                 include_catalog_instructions=include_guidance,
                 query_result_store=self.query_result_store,
+                max_rows=self.max_rows,
+                query_timeout=self.query_timeout,
             ),
         ]
         capabilities.extend(plugin_capabilities)
