@@ -46,10 +46,25 @@ def test_build_model_without_key_returns_provider_string() -> None:
     assert build_model("xai:grok-4.6", None) == "xai:grok-4.6"
 
 
-def test_build_model_groq_with_key_stays_discovery_string() -> None:
-    assert build_model("groq:llama-3-3-70b-versatile", "test-key") == (
-        "groq:llama-3-3-70b-versatile"
-    )
+@pytest.mark.parametrize(
+    ("model_name", "expected_system"),
+    [
+        ("groq:llama-3-3-70b-versatile", "groq"),
+        ("mistral:mistral-large-latest", "mistral"),
+        ("cohere:command-r-plus", "cohere"),
+    ],
+)
+def test_build_model_other_providers_use_explicit_key(
+    model_name: str, expected_system: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for env_var in ("GROQ_API_KEY", "MISTRAL_API_KEY", "CO_API_KEY", "COHERE_API_KEY"):
+        monkeypatch.delenv(env_var, raising=False)
+
+    model = build_model(model_name, "test-key")
+
+    assert not isinstance(model, str)
+    assert model.system == expected_system
+    assert model.model_name == model_name.partition(":")[2]
 
 
 def test_build_model_xai_explicit_key_injects_provider() -> None:

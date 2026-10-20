@@ -318,8 +318,8 @@ class AuthConfig:
     def validate(self, model_name: str) -> None:
         """Validate authentication for the given model.
 
-        On success, this hydrates the provider's expected environment variable (if
-        missing) so downstream SDKs can pick it up.
+        Keys are passed to provider constructors explicitly; process environment
+        variables are never modified.
 
         """
 
@@ -339,9 +339,6 @@ class AuthConfig:
         if not api_key:
             provider_name = provider_key.capitalize() if provider_key else "Provider"
             raise ValueError(f"{provider_name} API key not found.")
-
-        if not os.getenv(env_var):
-            os.environ[env_var] = api_key
 
 
 class AuthConfigProtocol(Protocol):
@@ -378,8 +375,6 @@ class InMemoryAuthConfig:
             return env_key
 
         api_key = self._api_keys.get(provider_key)
-        if api_key and not env_key:
-            os.environ[env_var] = api_key
         return api_key
 
     def validate(self, model_name: str) -> None:
