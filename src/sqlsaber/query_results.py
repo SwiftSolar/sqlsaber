@@ -23,6 +23,7 @@ QUERY_RESULT_MEDIA_TYPE = "application/vnd.sqlsaber.query-result+json"
 QUERY_RESULT_SCHEMA_VERSION = 1
 MAX_MODEL_QUERY_RESULT_BYTES = 12 * 1024
 MAX_CANONICAL_QUERY_RESULT_BYTES = 100 * 1024 * 1024
+MAX_QUERY_RESULT_SQL_BYTES = 64 * 1024
 _RESULT_ID_RE = re.compile(r"^qr_[a-f0-9]{32}$")
 _RESULT_FILE_RE = re.compile(r"^result_[A-Za-z0-9._-]{1,180}\.json$")
 
@@ -62,6 +63,10 @@ class StoredQueryResult:
     columns: tuple[str, ...]
     database_name: str | None = None
     created_at: float | None = None
+    sql: str | None = None
+    """Statement executed to produce the rows, when it fits the size limit."""
+    sql_sha256: str | None = None
+    """SHA-256 of the executed statement (UTF-8), recorded even when ``sql`` is not."""
 
     def to_dict(self) -> dict[str, object]:
         value: dict[str, object] = {
@@ -77,6 +82,10 @@ class StoredQueryResult:
             value["database_name"] = self.database_name
         if self.created_at is not None:
             value["created_at"] = self.created_at
+        if self.sql is not None:
+            value["sql"] = self.sql
+        if self.sql_sha256 is not None:
+            value["sql_sha256"] = self.sql_sha256
         return value
 
     @classmethod
@@ -102,11 +111,7 @@ class StoredQueryResult:
             return None
         if not isinstance(size, int) or isinstance(size, bool) or size < 0:
             return None
-        if (
-            not isinstance(digest, str)
-            or len(digest) != 64
-            or any(char not in "0123456789abcdef" for char in digest)
-        ):
+        if not isinstance(digest, str) or not _is_sha256_hex(digest):
             return None
         if (
             not isinstance(row_count, int)
@@ -126,6 +131,23 @@ class StoredQueryResult:
             not isinstance(created_at, (int, float)) or isinstance(created_at, bool)
         ):
             return None
+        sql = raw.get("sql")
+        if sql is not None and (
+            not isinstance(sql, str)
+            or len(sql.encode("utf-8")) > MAX_QUERY_RESULT_SQL_BYTES
+        ):
+            return None
+        sql_sha256 = raw.get("sql_sha256")
+        if sql_sha256 is not None and (
+            not isinstance(sql_sha256, str) or not _is_sha256_hex(sql_sha256)
+        ):
+            return None
+        if (
+            sql is not None
+            and sql_sha256 is not None
+            and _sql_digest(sql) != sql_sha256
+        ):
+            return None
         return cls(
             id=result_id,
             file=file,
@@ -136,7 +158,17 @@ class StoredQueryResult:
             columns=tuple(str(column) for column in columns),
             database_name=database_name,
             created_at=float(created_at) if created_at is not None else None,
+            sql=sql,
+            sql_sha256=sql_sha256,
         )
+
+
+def _is_sha256_hex(value: str) -> bool:
+    return len(value) == 64 and all(char in "0123456789abcdef" for char in value)
+
+
+def _sql_digest(sql: str) -> str:
+    return hashlib.sha256(sql.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,7 +261,31 @@ def descriptor_for_data(
     database_name: str | None = None,
     created_at: float | None = None,
     media_type: str = QUERY_RESULT_MEDIA_TYPE,
+    sql: str | None = None,
 ) -> StoredQueryResult:
+    """Build a descriptor for canonical query-result bytes.
+
+    Args:
+        data: Canonical result bytes.
+        result_id: Query result id (``qr_<hex>``).
+        file: Logical result file name.
+        row_count: Number of rows in the result.
+        columns: Result column names.
+        database_name: Logical database the query ran against.
+        created_at: Creation timestamp (seconds since epoch).
+        media_type: Result media type.
+        sql: Executed statement. Its digest is always recorded; the text is
+            recorded only up to ``MAX_QUERY_RESULT_SQL_BYTES``.
+
+    Returns:
+        The descriptor.
+    """
+    sql_text: str | None = None
+    sql_sha256: str | None = None
+    if sql is not None:
+        sql_sha256 = _sql_digest(sql)
+        if len(sql.encode("utf-8")) <= MAX_QUERY_RESULT_SQL_BYTES:
+            sql_text = sql
     return StoredQueryResult(
         id=result_id,
         file=file,
@@ -240,6 +296,8 @@ def descriptor_for_data(
         columns=columns,
         database_name=database_name,
         created_at=created_at,
+        sql=sql_text,
+        sql_sha256=sql_sha256,
     )
 
 
